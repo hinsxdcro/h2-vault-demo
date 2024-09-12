@@ -1,15 +1,25 @@
 <script lang="ts">
-  import { Chart, registerables } from "chart.js";
+  import Chart from "chart.js/auto";
 
   const colors = [
     "rgba(255, 99, 132, 0.2)",
     "rgba(54, 162, 235, 0.2)",
     "rgba(255, 206, 86, 0.2)",
     "rgba(75, 192, 192, 0.2)",
+    "rgba(153, 102, 255, 0.2)",
+    "rgba(255, 159, 64, 0.2)",
   ];
 
   let deposits = $state([
-    { h2: 100, xh2: 100, hydro: 100, extra: 0, multiplier: 1 },
+    {
+      h2: 100,
+      xh2: 100,
+      hydro: 100,
+      extra: 0,
+      multiplier: 1,
+      pendingRewards: 0,
+      claimedRewards: 0,
+    },
   ]);
 
   let total = $derived(
@@ -37,8 +47,22 @@
       hydro,
       multiplier,
       extra: 0,
+      claimedRewards: 0,
+      pendingRewards: 0,
     });
   }
+
+  function giveRewards(amount: number) {
+    deposits = deposits.map((deposit) => {
+      deposit.pendingRewards += (amount * deposit.hydro) / total.hydro;
+      return deposit;
+    });
+  }
+  function collectReward(index: number) {
+    deposits[index].claimedRewards += deposits[index].pendingRewards;
+    deposits[index].pendingRewards = 0;
+  }
+
   function addH2(amount: number) {
     deposits = deposits.map((deposit) => {
       deposit.extra += (amount * deposit.hydro) / total.hydro;
@@ -48,65 +72,71 @@
 
   let depositInput = $state(100);
   let addExtraH2Input = $state(1000);
+  let giveRewardsInput = $state(1000);
   let multiplierInput = $state(1);
 
-  let chart: Chart;
-
-  Chart.register(...registerables);
+  let chartElement: HTMLCanvasElement;
 
   $effect(() => {
-    const data = groupByAmount
-      ? {
-          labels: ["H2", "xH2", "HYDRO", "EXTRA"],
-          datasets: deposits.map((deposit, i) => {
-            return {
-              label: "Deposits " + i,
-              data: [deposit.h2, deposit.xh2, deposit.hydro, deposit.extra],
-              backgroundColor: colors[i % colors.length],
-              borderWidth: 1,
-            };
-          }),
-        }
-      : {
-          // group by deposit
-          labels: deposits.map((deposit, i) => `Deposit ${i}`),
-          datasets: ["h2", "xh2", "hydro", "extra"].map((label, i) => {
-            return {
-              label,
-              data: deposits.map(
-                (deposit) => deposit[label as keyof typeof deposit]
-              ),
-              backgroundColor: colors[i % colors.length],
-              borderWidth: 1,
-            };
-          }),
-        };
-
-    if (!chart) {
-      const ctx = document.getElementById("chart") as any;
-      chart = new Chart(ctx, {
-        type: "bar",
-        data,
-        options: {
-          animation: false,
-          responsive: true,
-          scales: {
-            y: {
-              stacked,
-              beginAtZero: true,
-            },
-            x: {
-              stacked,
-            },
+    const chart = new Chart(chartElement, {
+      type: "bar",
+      data: groupByAmount
+        ? {
+            labels: [
+              "h2",
+              "xh2",
+              "hydro",
+              "pendingRewards",
+              "claimedRewards",
+              "extra",
+            ],
+            datasets: deposits.map((deposit, i) => {
+              return {
+                label: "Deposits " + i,
+                data: [deposit.h2, deposit.xh2, deposit.hydro, deposit.extra],
+                backgroundColor: colors[i % colors.length],
+                borderWidth: 1,
+              };
+            }),
+          }
+        : {
+            // group by deposit
+            labels: deposits.map((deposit, i) => `Deposit ${i}`),
+            datasets: [
+              "h2",
+              "xh2",
+              "hydro",
+              "pendingRewards",
+              "claimedRewards",
+              "extra",
+            ].map((label, i) => {
+              return {
+                label,
+                data: deposits.map(
+                  (deposit) => deposit[label as keyof typeof deposit]
+                ),
+                backgroundColor: colors[i % colors.length],
+                borderWidth: 1,
+              };
+            }),
+          },
+      options: {
+        animation: false,
+        responsive: true,
+        scales: {
+          y: {
+            stacked,
+            beginAtZero: true,
+          },
+          x: {
+            stacked,
           },
         },
-      });
-    } else {
-      chart.data = data;
-      (chart.options.scales as any).y.stacked = stacked;
-      (chart.options.scales as any).x.stacked = stacked;
-      chart.update();
-    }
+      },
+    });
+    return () => {
+      chart.destroy();
+    };
   });
 </script>
 
@@ -144,34 +174,42 @@
   <button type="submit">Add Extra H2</button>
 </form>
 
+<!-- Form to give rewards -->
+<form
+  onsubmit={(e) => {
+    e.preventDefault();
+    giveRewards(giveRewardsInput);
+  }}
+>
+  <label for="give-rewards-input">Give Rewards</label>
+  <input type="number" id="give-rewards-input" bind:value={giveRewardsInput} />
+  <button type="submit">Give Rewards</button>
+</form>
+
 Deposit details:
 <div
   style="display: flex; flex-direction: row; gap: 1rem; align-items: flex-start;"
 >
-  <table class="deposits" style="flex:1">
-    <thead>
-      <tr>
-        <th>Index</th>
-        <th>H2</th>
-        <th>xh2</th>
-        <th>hydro</th>
-        <th>multiplier</th>
-        <th>extra</th>
-      </tr>
-    </thead>
-    <tbody>
-      {#each deposits as deposit, i}
-        <tr>
-          <td>{i}</td>
-          <td>{deposit.h2.toFixed(2)}</td>
-          <td>{deposit.xh2.toFixed(2)}</td>
-          <td>{deposit.hydro.toFixed(2)}</td>
-          <td>{deposit.multiplier}</td>
-          <td>{deposit.extra.toFixed(2)}</td>
-        </tr>
-      {/each}
-    </tbody>
-  </table>
+  <div style="">
+    {#each deposits as deposit, i}
+      <div class="position">
+        <h3 class="title">Deposit {i}</h3>
+        <div class="content">
+          <div>H2<br />{deposit.h2}</div>
+          <div>xH2<br />{deposit.xh2}</div>
+          <div>HYDRO<br />{deposit.hydro}</div>
+          <div>Extra<br />{deposit.extra}</div>
+          <div>
+            Pending Rewards<br />{deposit.pendingRewards}<br />
+            <button onclick={() => collectReward(i)}>Collect Rewards</button>
+          </div>
+          <div>
+            Collected Rewards<br />{deposit.claimedRewards}
+          </div>
+        </div>
+      </div>
+    {/each}
+  </div>
 
   <div style="flex: 1">
     <div>
@@ -189,14 +227,12 @@ Deposit details:
 </div>
 
 <style>
-  .deposits {
-    border-collapse: collapse;
+  .position {
+    flex: 0 0 400px;
   }
-  .deposits th,
-  .deposits td {
-    width: 100px;
-
-    padding: 0.5rem;
-    text-align: left;
+  .position .content {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
   }
 </style>
