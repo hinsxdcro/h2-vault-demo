@@ -50,8 +50,6 @@
   let addExtraH2Input = $state(1000);
   let multiplierInput = $state(1);
 
-  let chartElement: HTMLCanvasElement;
-
   let chart: Chart;
 
   Chart.register(...registerables);
